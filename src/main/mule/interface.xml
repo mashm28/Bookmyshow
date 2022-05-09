@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<mule xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:apikit-soap="http://www.mulesoft.org/schema/mule/apikit-soap" xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core" xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd http://www.mulesoft.org/schema/mule/apikit-soap http://www.mulesoft.org/schema/mule/apikit-soap/current/mule-apikit-soap.xsd http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd">
+    <apikit-soap:config httpStatusVarName="httpStatus" name="soapkit-config" port="orderSOAP" service="order" wsdlLocation="OrderSOAPService.wsdl"/>
+    <flow name="api-main">
+        <http:listener path="/order/orderSOAP" config-ref="HTTP_Listener_config">
+            <http:response statusCode="#[attributes.additionalTransportData.statusCode default 200]">
+                <http:headers><![CDATA[#[attributes.protocolHeaders default {}]]]></http:headers>
+            </http:response>
+            <http:error-response statusCode="#[attributes.additionalTransportData.statusCode default 500]">
+                <http:body><![CDATA[#[error]]]></http:body>
+                <http:headers><![CDATA[#[attributes.protocolHeaders default {}]]]></http:headers>
+            </http:error-response>
+        </http:listener>
+        <apikit-soap:router config-ref="soapkit-config">
+            <apikit-soap:attributes><![CDATA[#[%dw 2.0
+              output application/java
+              ---
+              {
+                  headers: attributes.headers,
+                  method: attributes.method,
+                  queryString: attributes.queryString
+            }]]]></apikit-soap:attributes>
+        </apikit-soap:router>
+    </flow>
+    <flow name="getAllOrders:\soapkit-config">
+        <flow-ref doc:name="getAllOrdersFlow" doc:id="f5aa04e0-6b47-414b-9ac8-374f6c15c2c0" name="getAllOrdersFlow"/>
+    </flow>
+    <flow name="getOrdersById:\soapkit-config">
+        
+		<set-variable value="#[%dw 2.0&#10;ns ns0 http://www.bookmyshow.org/order/&#10;output application/json&#10;---&#10;payload.body.ns0#getOrdersById.id]" doc:name="orderId" doc:id="1c663306-c055-450a-bbd0-7a7d609b3270" variableName="orderId"/>
+		<flow-ref doc:name="getOrderByIdFlow" doc:id="b568042a-810c-45b6-9836-3e8b510f81cf" name="getOrderByIdFlow"/>
+    </flow>
+    <flow name="getOrdersByEmail:\soapkit-config">
+        <set-variable value="#[%dw 2.0&#10;ns ns0 http://www.bookmyshow.org/order/&#10;output application/json&#10;---&#10;payload.body.ns0#getOrdersByEmail.email]" doc:name="emailId" doc:id="0f899752-f967-4a50-82c3-e213ae61369d" variableName="emailId"/>
+		<flow-ref doc:name="getOrderByEmailIdFlow" doc:id="bd69ab09-2e06-4a8b-80e8-143588205c00" name="getOrderByEmailIdFlow"/>
+    </flow>
+    <flow name="getOrdersByMobileNo:\soapkit-config">
+        <set-variable value="#[%dw 2.0&#10;ns ns0 http://www.bookmyshow.org/order/&#10;---&#10;payload.body.ns0#getOrdersByMobileNo.mobileNo]" doc:name="mobileNo" doc:id="5ddd30bd-4d62-4400-b048-fa750441c3e3" variableName="mobileNo"/>
+		<flow-ref doc:name="getOrderByMobileFlow" doc:id="0be9a294-14fd-49b3-ac3d-44530ff04a61" name="getOrderByMobileFlow"/>
+    </flow>
+    <flow name="getOrdersByMovie:\soapkit-config">
+        <set-variable value="#[%dw 2.0&#10;ns ns0 http://www.bookmyshow.org/order/&#10;---&#10;payload.body.ns0#getOrdersByMovie.movie]" doc:name="movie" doc:id="2c3392b4-34ba-46ea-8e99-fa1f0b6cfda0" variableName="movie"/>
+		<flow-ref doc:name="getOrderByMovieFlow" doc:id="8d81aced-1f8f-41dd-b367-41bc78cd7e33" name="getOrderByMovieFlow"/>
+    </flow>
+    <flow name="addOrder:\soapkit-config">
+    <set-variable value="#[%dw 2.0&#10;ns ns0 http://www.bookmyshow.org/order/&#10;output application/json&#10;---&#10;{&#10;	customer_name: payload.body.ns0#addOrder.customerName,&#10;	mobile_no: payload.body.ns0#addOrder.mobileNo,&#10;	email: payload.body.ns0#addOrder.email,&#10;	movie_name: payload.body.ns0#addOrder.movieName,&#10;	theatre_name: payload.body.ns0#addOrder.theatreName,&#10;	location: payload.body.ns0#addOrder.location,&#10;	area: payload.body.ns0#addOrder.area,&#10;	total_seats: payload.body.ns0#addOrder.totalSeats,&#10;	booked_seats: payload.body.ns0#addOrder.bookedSeats,&#10;	booked_on: payload.body.ns0#addOrder.bookedOn,&#10;	total_amount: payload.body.ns0#addOrder.totalAmount&#10;&#10;}]" doc:name="orderVar" doc:id="81895492-dfdb-49de-a753-613f4bda1c3d" variableName="order"/>
+		<flow-ref doc:name="addOrderFlow" doc:id="2012900f-1f7b-44e5-a82d-c47b53170db5" name="addOrderFlow"/>
+        
+    </flow>
+    <flow name="deleteOrder:\soapkit-config">
+        <set-variable value="#[%dw 2.0&#10;ns ns0 http://www.bookmyshow.org/order/&#10;---&#10;payload.body.ns0#deleteOrder.id]" doc:name="orderId" doc:id="bbe1c353-083b-45dd-a0e5-3876cac154c7" variableName="orderId"/>
+		<flow-ref doc:name="deleteOrderFlow" doc:id="51328e4f-5333-462e-a2aa-1183108c1ab7" name="deleteOrderFlow"/>
+    </flow>
+</mule>

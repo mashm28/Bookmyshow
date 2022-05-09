@@ -1,0 +1,315 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:db="http://www.mulesoft.org/schema/mule/db" xmlns:os="http://www.mulesoft.org/schema/mule/os"
+	xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
+	xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd
+http://www.mulesoft.org/schema/mule/os http://www.mulesoft.org/schema/mule/os/current/mule-os.xsd
+http://www.mulesoft.org/schema/mule/db http://www.mulesoft.org/schema/mule/db/current/mule-db.xsd">
+	<flow name="addOrderFlow" doc:id="ab83b7d9-a7c5-406b-8c34-4d5a4ad61897" >
+		<logger level="INFO" doc:name="StartLog" doc:id="dc62e5da-8228-4050-83f8-69aee373cabd" message='#["\n Received Order Details \n" : vars.order]' />
+		<db:select doc:name="MaxOrderId" doc:id="dbdf1053-3fde-4c7e-af12-231ea4cd6088" config-ref="Database_Config">
+			<db:sql ><![CDATA[SELECT MAX(orderId) as orderId FROM orderbook]]></db:sql>
+		</db:select>
+		<set-variable value="#[%dw 2.0&#10;output application/json&#10;---&#10;payload.orderId[0] + 1 as Number default 1]" doc:name="OrderIdVar" doc:id="a3e06f02-122a-4533-89de-74241ba2fdf2" variableName="OrderId"/>
+		<db:insert doc:name="InsertOrder" doc:id="eb4dbc21-bfc3-4003-a8bf-d07b6c51926d" config-ref="Database_Config">
+			<db:sql ><![CDATA[INSERT INTO orderbook (orderId, orderStatus, movieName, theaterName, location, area, customerName, mobileNo, emailId, bookedDate, totalSeats, bookedSeats, amount) VALUES 
+(:orderId,:orderStatus,:movieName,:theatreName,:location,:area,:customerName,:mobileNo,:emailId,:bookedOn,:totalSeats,:bookedSeats,:amount)]]></db:sql>
+			<db:input-parameters ><![CDATA[#[{
+	orderId: vars.OrderId,
+	orderStatus: upper("Booked"),
+	movieName: vars.order.movie_name,
+	theatreName: vars.order.theatre_name,
+	location: vars.order.location,
+	area: vars.order.area,
+	customerName: vars.order.customer_name,
+	mobileNo: vars.order.mobile_no as Number,
+	emailId: vars.order.email,
+	bookedOn: now() as String {format: "y-MM-dd hh:m:s"},
+	totalSeats: vars.order.total_seats,
+	bookedSeats: vars.order.booked_seats,
+	amount: vars.order.total_amount,
+}]]]></db:input-parameters>
+		</db:insert>
+		<choice doc:name="Status" doc:id="a10825c7-071c-483a-91e8-14cfd74e73e4" >
+			<when expression="#[payload.affectedRows &gt;= 1]">
+				<ee:transform doc:name="OrderSuccess">
+            <ee:message>
+                <ee:set-payload><![CDATA[%dw 2.0
+output application/java
+ns soap http://schemas.xmlsoap.org/soap/envelope
+ns ord http://www.bookmyshow.org/order
+---
+{
+    body: {
+        ord#addOrderResponse: {
+            orderId: vars.OrderId,
+            status: "Order placed successfully"
+        }
+    } write "application/xml"
+}]]>
+                </ee:set-payload>
+            </ee:message>
+        </ee:transform>
+			</when>
+			<otherwise >
+				<ee:transform doc:name="OrderFailed" doc:id="107dbf8a-83b9-4690-80f7-b83c674cd25d" >
+					<ee:message >
+						<ee:set-payload ><![CDATA[%dw 2.0
+output application/java
+ns soap http://schemas.xmlsoap.org/soap/envelope
+ns ord http://www.bookmyshow.org/order
+---
+{
+    body: {
+        ord#addOrderResponse: {
+            orderId: '',
+            status: "Order insertion failed"
+        }
+    } write "application/xml"
+}]]></ee:set-payload>
+					</ee:message>
+				</ee:transform>
+			</otherwise>
+		</choice>
+		<logger level="INFO" doc:name="EndLog" doc:id="bb545c4f-9b74-4af8-98d3-3ab613ab52ab" message='#["OrderStatus: \n" : payload]' />
+	</flow>
+	<flow name="deleteOrderFlow" doc:id="f3d7c8ac-3127-4434-b66e-ceb175ba3fcf" >
+		<logger level="INFO" doc:name="StartLog" doc:id="340e0b4d-7965-45e0-94a5-cfa948bdbd9b" message='#["Cancel Order Request - Order id " : vars.orderId]'/>
+		<db:delete doc:name="DeleteOrder" doc:id="0ffb8010-224a-40b5-8722-0ad512fe957b" config-ref="Database_Config">
+			<db:sql ><![CDATA[DELETE FROM orderbook WHERE orderId =:orderID]]></db:sql>
+			<db:input-parameters ><![CDATA[#[{
+  orderID : vars.orderId	
+}]]]></db:input-parameters>
+		</db:delete>
+		<choice doc:name="Status" doc:id="26938d72-82e8-482d-b1f2-cdd23046f784" >
+			<when expression="#[payload as Number == 1]">
+				<ee:transform doc:name="OrderSuccess">
+            <ee:message>
+                <ee:set-payload><![CDATA[%dw 2.0
+output application/java
+ns soap http://schemas.xmlsoap.org/soap/envelope
+ns ord http://www.bookmyshow.org/order
+---
+{
+    body: {
+        ord#addOrderResponse: {
+            orderId: vars.orderId,
+            status: "Order deleted successfully"
+        }
+    } write "application/xml"
+}]]>
+                </ee:set-payload>
+            </ee:message>
+        </ee:transform>
+			</when>
+			<otherwise >
+				<ee:transform doc:name="OrderFailed" doc:id="b57454d6-3440-4835-a508-1f0e71901dec" >
+					<ee:message >
+						<ee:set-payload ><![CDATA[%dw 2.0
+output application/java
+ns soap http://schemas.xmlsoap.org/soap/envelope
+ns ord http://www.bookmyshow.org/order
+---
+{
+    body: {
+        ord#addOrderResponse: {
+            orderId: vars.orderId,
+            status: "Order ID is incorrect/not available."
+        }
+    } write "application/xml"
+}]]></ee:set-payload>
+					</ee:message>
+				</ee:transform>
+			</otherwise>
+		</choice>
+		<logger level="INFO" doc:name="EndLog" doc:id="41e2637b-d371-4060-9ca2-a8d4b7138c81" message='#["Cancel Order Status: \n" : payload]' />
+	</flow>
+	<flow name="getOrderByIdFlow" doc:id="0d2b0e2e-7e30-4633-a707-00d139e6effc" >
+		<logger level="INFO" doc:name="StartLog" doc:id="2594ee51-949b-4cea-8566-bc040ccc3707" message='#["Order id " : vars.orderId]'/>
+		<db:select doc:name="QueryOrder" doc:id="6ae42ed3-d4ed-43c4-a560-efead82ee603" config-ref="Database_Config">
+			<db:sql ><![CDATA[SELECT * FROM orderbook WHERE orderId =:orderID]]></db:sql>
+			<db:input-parameters ><![CDATA[#[{
+  orderID : vars.orderId	
+}]]]></db:input-parameters>
+		</db:select>
+		<ee:transform doc:name="OrderDetails" doc:id="b06f0e08-e729-4ea9-bd55-8193ed61b5a5" >
+			<ee:message >
+				<ee:set-payload ><![CDATA[%dw 2.0
+output application/java
+ns soap http://schemas.xmlsoap.org/soap/envelope
+ns ord http://www.bookmyshow.org/order
+---
+{
+    body: {
+        ord#getOrdersByIdResponse: {
+        ord#Order: payload map(data, index) -> {
+            orderId: data.ORDER_ID,
+            customerName: data.CUSTOMER_NAME,
+            mobileNo: data.MOBILE_NO,
+            email: data.EMAIL_ID,
+            movieName: data.MOVIE_NAME,
+            theatreName: data.THEATRE_NAME,
+            location: data.LOCATION,
+            area: data.AREA,
+            bookedSeats: data.BOOKED_SEATS,
+            bookedOn: data.BOOKED_ON,
+            totalAmount: data.AMOUNT,
+           } 
+        }
+    } write "application/xml"
+}]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+		<logger level="INFO" doc:name="EndLog" doc:id="8d69bc0d-81e5-4ead-a6ef-3166bfee176b" message='#["Order details" : payload]'/>
+	</flow>
+	<flow name="getOrderByEmailIdFlow" doc:id="1e34b13d-784b-4f05-acfc-bf8eb2bcd44c" >
+		<logger level="INFO" doc:name="StartLog" doc:id="8f867ed5-1fca-4eef-a5ee-e100468efdd2" message='#["getOrderByEmailID Request - email id " : vars.emailId]'/>
+		<db:select doc:name="QueryOrder" doc:id="27517c11-b2be-498e-95f1-97e0d23c1a6e" config-ref="Database_Config">
+			<db:sql ><![CDATA[SELECT * FROM orderbook WHERE emailId =:emailID]]></db:sql>
+			<db:input-parameters ><![CDATA[#[{
+  emailID : vars.emailId	
+}]]]></db:input-parameters>
+		</db:select>
+		<ee:transform doc:name="OrderDetails" doc:id="84212ab4-0ffe-40b3-a97d-44f3b5e48ec0" >
+			<ee:message >
+				<ee:set-payload ><![CDATA[%dw 2.0
+output application/java
+ns soap http://schemas.xmlsoap.org/soap/envelope
+ns ord http://www.bookmyshow.org/order
+---
+{
+    body: {
+        ord#getOrdersByEmailResponse: {
+         ord#Order: payload map(data, index) -> {
+            orderId: data.ORDER_ID,
+            customerName: data.CUSTOMER_NAME,
+            mobileNo: data.MOBILE_NO,
+            email: data.EMAIL_ID,
+            movieName: data.MOVIE_NAME,
+            theatreName: data.THEATRE_NAME,
+            location: data.LOCATION,
+            area: data.AREA,
+            bookedSeats: data.BOOKED_SEATS,
+            bookedOn: data.BOOKED_ON,
+            totalAmount: data.AMOUNT,
+           }
+        }
+    } write "application/xml"
+}]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+		<logger level="INFO" doc:name="EndLog" doc:id="37610f54-7586-4238-8a66-d0ba5f91d5ae" message='#["Order details" : payload]'/>
+	</flow>
+	<flow name="getOrderByMobileFlow" doc:id="ffbd4b6e-94c6-4b88-a29c-b3e22ddfc53e" >
+		<logger level="INFO" doc:name="StartLog" doc:id="fa9533d5-e734-4c78-87a5-6f556c85b90a" message='#["getOrderByMobileNo Request - Mobile No " : vars.mobileNo]'/>
+		<db:select doc:name="QueryOrder" doc:id="834fb7ac-c9ee-431a-ba0a-43d5e626857c" config-ref="Database_Config">
+			<db:sql ><![CDATA[SELECT * FROM orderbook WHERE mobileNo =:mobileNo]]></db:sql>
+			<db:input-parameters ><![CDATA[#[{
+  mobileNo : vars.mobileNo	
+}]]]></db:input-parameters>
+		</db:select>
+		<ee:transform doc:name="OrderDetails" doc:id="3f686876-6866-463e-8e59-9297740ddd9f" >
+			<ee:message >
+				<ee:set-payload ><![CDATA[%dw 2.0
+output application/java
+ns soap http://schemas.xmlsoap.org/soap/envelope
+ns ord http://www.bookmyshow.org/order
+---
+{
+    body: {
+        ord#getOrdersByMobileNoResponse: {
+         ord#Order: payload map(data, index) -> {
+            orderId: data.ORDER_ID,
+            customerName: data.CUSTOMER_NAME,
+            mobileNo: data.MOBILE_NO,
+            email: data.EMAIL_ID,
+            movieName: data.MOVIE_NAME,
+            theatreName: data.THEATRE_NAME,
+            location: data.LOCATION,
+            area: data.AREA,
+            bookedSeats: data.BOOKED_SEATS,
+            bookedOn: data.BOOKED_ON,
+            totalAmount: data.AMOUNT,
+           }
+        }
+    } write "application/xml"
+}]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+		<logger level="INFO" doc:name="EndLog" doc:id="d6fb1b83-b11e-4867-accb-d68fa3526eb6" message='#["Order details" : payload]'/>
+	</flow>
+	<flow name="getOrderByMovieFlow" doc:id="1b6f9f30-a4e5-4e33-bd69-f4009c52eb0f" >
+		<logger level="INFO" doc:name="StartLog" doc:id="a8eaa685-9a23-4a24-bc2a-d4a566c0261b" message='#["getOrderByMovie Request - Movie Name " : vars.movie]'/>
+		<db:select doc:name="QueryOrder" doc:id="cb815cf3-0aa9-44af-a32c-f2e4a29c2bdc" config-ref="Database_Config">
+			<db:sql ><![CDATA[SELECT * FROM orderbook WHERE upper(movieName) =:movie]]></db:sql>
+			<db:input-parameters ><![CDATA[#[{
+  movie : upper(vars.movie)	
+}]]]></db:input-parameters>
+		</db:select>
+		<ee:transform doc:name="OrderDetails" doc:id="6be3f1a7-cb93-4b1d-b333-6d50f2a3cd8e" >
+			<ee:message >
+				<ee:set-payload ><![CDATA[%dw 2.0
+output application/java
+ns soap http://schemas.xmlsoap.org/soap/envelope
+ns ord http://www.bookmyshow.org/order
+---
+{
+    body: {
+        ord#getOrdersByMovieResponse: {
+         ord#Order: payload map(data, index) -> {
+            orderId: data.ORDER_ID,
+            customerName: data.CUSTOMER_NAME,
+            mobileNo: data.MOBILE_NO,
+            email: data.EMAIL_ID,
+            movieName: data.MOVIE_NAME,
+            theatreName: data.THEATRE_NAME,
+            location: data.LOCATION,
+            area: data.AREA,
+            bookedSeats: data.BOOKED_SEATS,
+            bookedOn: data.BOOKED_ON,
+            totalAmount: data.AMOUNT,
+           }
+        }
+    } write "application/xml"
+}]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+		<logger level="INFO" doc:name="EndLog" doc:id="d41a0a03-7b50-440a-a9a2-68999ba9dbef" message='#["Order details" : payload]'/>
+	</flow>
+	<flow name="getAllOrdersFlow" doc:id="02835d69-ac4f-4629-9c2a-7235cf5393e5" >
+		<logger level="INFO" doc:name="StartLog" doc:id="a2c3e983-074d-4b3a-be02-af622488486c" message='GetAllOrders Request Started'/>
+		<db:select doc:name="QueryOrders" doc:id="80b0c727-b34b-4ab5-ab00-c39a614a53cf" config-ref="Database_Config">
+			<db:sql ><![CDATA[SELECT * FROM orderbook]]></db:sql>
+		</db:select>
+		<ee:transform doc:name="OrdersDetails" doc:id="b753d58c-f160-497c-9a55-0eefbd39e11c" >
+			<ee:message >
+				<ee:set-payload ><![CDATA[%dw 2.0
+output application/java
+ns soap http://schemas.xmlsoap.org/soap/envelope
+ns ord http://www.bookmyshow.org/order
+---
+{
+    body: {
+        ord#getAllOrdersResponse: {
+         ord#Order: payload map(data, index) -> {
+            orderId: data.ORDER_ID,
+            customerName: data.CUSTOMER_NAME,
+            mobileNo: data.MOBILE_NO,
+            email: data.EMAIL_ID,
+            movieName: data.MOVIE_NAME,
+            theatreName: data.THEATRE_NAME,
+            location: data.LOCATION,
+            area: data.AREA,
+            bookedSeats: data.BOOKED_SEATS,
+            bookedOn: data.BOOKED_ON,
+            totalAmount: data.AMOUNT,
+           }
+        }
+    } write "application/xml"
+}]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+		<logger level="INFO" doc:name="EndLog" doc:id="5bb02169-fb6f-47eb-b421-e277ad8e28d3" message='GetAllOrders Request Processed Successfully'/>
+	</flow>
+</mule>
